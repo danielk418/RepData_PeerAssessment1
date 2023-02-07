@@ -5,21 +5,206 @@ output:
     keep_md: true
 ---
 
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
 
 ## Loading and preprocessing the data
+```{r load and process, echo=TRUE}
+library(dplyr)
 
+#1 Unzip data
+
+unzip(zipfile = "activity.zip", exdir = "data")
+
+#2 Load the data 
+activity_data <- read.csv("data/activity.csv")
+
+#3 Process/transform the data (if necessary) into a format suitable for your analysis. Ignore(Remove?) missing values
+
+activity_data_no_nulls <- activity_data[complete.cases(activity_data), ]
+
+
+```
 
 
 ## What is mean total number of steps taken per day?
 
+```{r}
+library(kableExtra)
+
+#1 What is mean total number of steps taken per day?
+total_steps_data <- activity_data_no_nulls %>% 
+                    group_by(date) %>% 
+                    summarize(total_steps = sum(steps))
+```
+
+
+```{r}
+
+total_sample <- head(total_steps_data, 10)
+
+kable(x = total_steps_data, caption = "Mean Total Number of Steps Taken Per Day", col.names = c("Date", "Total Steps"))%>%
+  kable_styling(bootstrap_options = c("striped", "hover"),full_width = FALSE)
+
+
+```
+
+
+```{r}
+#2 Make a histogram of the total number of steps taken each day
+hist(total_steps_data$total_steps, xlab = "Daily Steps", main = "Histogram of total number of steps taken each day")
+
+
+dev.copy(png, file = "plots/hist_total_steps_per_day.png")
+
+dev.off()
+
+
+#3 Calculate and report the mean and median of the total number of steps taken per day
+
+step_mean <-  round(mean(total_steps_data$total_steps)) 
+
+step_median <- round(median(total_steps_data$total_steps))
+
+mean_and_median <- as.data.frame(cbind(step_mean, step_median))
+
+kable(x = mean_and_median, caption = "Mean and Median of the Total Number of Steps Taken Per Day", col.names = c("Mean", "Median"))%>%
+  kable_styling(bootstrap_options = c("striped", "hover"),full_width = FALSE)
+
+
+
+
+```
 
 
 ## What is the average daily activity pattern?
+
+```{r total steps, echo=FALSE}
+
+1# What is the average daily activity pattern?
+
+summarized_time_series <-  activity_data_no_nulls %>% 
+                               group_by(interval) %>% 
+                               summarize(avg_steps_per_interval = mean(steps))
+
+kable(x = summarized_time_series, caption = "Average Daily Activity Pattern", col.names = c("Interval", "Avg Steps Per Interval")) %>% 
+  kable_styling(bootstrap_options = c("striped", "hover"),full_width = FALSE)
+
+
+#2 Make a time series plot (i.e. type = "l") of the 5-minute interval (x-axis) and the average number of steps taken, averaged across all days (y-axis)
+
+plot(x = summarized_time_series$interval, y = summarized_time_series$avg_steps_per_interval, type = "l",xlab = "5 Minute Interval", ylab = "Average Steps Taken")
+
+dev.copy(png, file = "plots/time_series_average_steps_taken_5min_interval.png")
+
+dev.off()
+
+
+#3 Which 5-minute interval, on average across all the days in the dataset, contains the maximum number of steps?
+
+five_min_interval <- summarized_time_series[which.max(summarized_time_series$avg_steps_per_interval), ][1]
+
+paste("The 5 minute interval with the maximum number of steps is", five_min_interval, ".")
+
+```
 
 
 
 ## Imputing missing values
 
 
+```{r}
+
+#1 Calculate and report the total number of missing values in the dataset (i.e. the total number of rows with NAs)
+
+nrow(activity_data[!complete.cases(activity_data), ]) 
+
+#2 Devise a strategy for filling in all of the missing values in the dataset. The strategy does not need to be sophisticated. For example, you could use the mean/median for that day, or the mean for that 5-minute interval, etc.
+
+mean_steps_per_interval <- activity_data %>% 
+                           group_by(interval) %>% 
+                           summarize(avg = mean(steps, na.rm = TRUE))
+
+null_records <- activity_data[!complete.cases(activity_data), ]
+
+#merge null records with mean steps per interval
+merged_data <- merge(x = mean_steps_per_interval, y = null_records, by.x = "interval", by.y = "interval")
+
+filled_in_records <-  merged_data %>% 
+                      select(-steps) %>% 
+                      rename(steps = avg)
+
+#3 Create a new dataset that is equal to the original dataset but with the missing data filled in.
+
+imputed_data <-  rbind(filled_in_records, activity_data[complete.cases(activity_data), ])
+
+imputed_data_grouped <- imputed_data %>% 
+                        group_by(date) %>% 
+                        summarize(total_steps_imputed = sum(steps))
+
+
+#4 Make a histogram of the total number of steps taken each day and Calculate and report the mean and median total number of steps taken per day. Do these values differ from the estimates from the first part of the assignment? What is the impact of imputing missing data on the estimates of the total daily number of steps?
+
+hist(imputed_data_grouped$total_steps_imputed, xlab = "Daily Steps", main = "Histogram of total number of steps taken each day (imputed data)")
+
+dev.copy(png, file="plots/hist_daily_steps_taken_imputed.png")
+
+
+dev.off()
+
+summary(imputed_data_grouped$total_steps_imputed)[4:3]
+
+imputed_mean <- toString(round(summary(imputed_data_grouped$total_steps_imputed)[[4]],2)) 
+
+imputed_median <- toString(round(summary(imputed_data_grouped$total_steps_imputed)[[3]],2)) 
+
+non_imputed_mean <- toString(round(summary(total_steps_data$total_steps)[[4]], 2)) 
+
+non_imputed_median <- toString(round(summary(total_steps_data$total_steps)[[3]], 2))  
+
+
+```
+
+
 
 ## Are there differences in activity patterns between weekdays and weekends?
+
+```{r}
+
+#1 Create a new factor variable in the dataset with two levels – “weekday” and “weekend” indicating whether a given date is a weekday or weekend day.
+
+imputed_data$date_type <- as.factor(ifelse(test = weekdays(as.Date(imputed_data$date)) %in% c("Saturday", "Sunday"), yes = "weekend", no = "weekday"))     
+
+#2 Make a panel plot containing a time series plot (i.e. type = "l") of the 5-minute interval (x-axis) and the average number of steps taken, averaged across all weekday days or weekend days (y-axis).
+
+weekday_data <- imputed_data[imputed_data$date_type == "weekday", ]
+
+weekday_data_grouped <- weekday_data %>% 
+                        group_by(interval) %>% 
+                        summarize(avg_steps = mean(steps))
+             
+weekend_data <- imputed_data[imputed_data$date_type == "weekend", ]
+
+weekend_data_grouped <- weekend_data %>% 
+                        group_by(interval) %>% 
+                        summarize(avg_steps = mean(steps))
+
+
+
+par(mfrow=c(2,1))
+
+with(weekend_data_grouped, plot(type="l", x = interval, y = avg_steps, ylab= "Number of Steps"))
+title(main = "weekend")
+
+with(weekday_data_grouped, plot(type="l", x = interval, y = avg_steps, ylab= "Number of Steps"))
+title(main = "weekday")
+
+dev.copy(png, file = "plots/panel_plot_number_of_steps.png")
+
+dev.off()
+
+print("The panel plots show that there are significant differences between the Weeknd and Weekday activity patterns.")
+
+
+```
